@@ -9,21 +9,25 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 
 import qcodes as qc
-from qcodes import (experiments, load_by_counter, load_by_id, new_data_set,
-                    new_experiment)
+from qcodes import (
+    experiments,
+    load_by_counter,
+    load_by_id,
+    new_data_set,
+    new_experiment,
+)
 from qcodes.dataset.data_set import CompletedError, DataSet
 from qcodes.dataset.descriptions.dependencies import InterDependencies_
 from qcodes.dataset.descriptions.param_spec import ParamSpecBase
 from qcodes.dataset.descriptions.rundescriber import RunDescriber
 from qcodes.dataset.guids import parse_guid
-from qcodes.dataset.sqlite.connection import path_to_dbfile
+from qcodes.dataset.sqlite.connection import atomic, path_to_dbfile
 from qcodes.dataset.sqlite.database import get_DB_location
-from qcodes.dataset.sqlite.queries import _unicode_categories
+from qcodes.dataset.sqlite.queries import _rewrite_timestamps, _unicode_categories
 from qcodes.tests.common import error_caused_by
-from qcodes.tests.dataset.test_links import generate_some_links
-from qcodes.utils.types import numpy_ints, numpy_floats
-
 from qcodes.tests.dataset.helper_functions import verify_data_dict
+from qcodes.tests.dataset.test_links import generate_some_links
+from qcodes.utils.types import numpy_floats, numpy_ints
 
 n_experiments = 0
 
@@ -192,6 +196,22 @@ def test_timestamps_are_none():
 
     assert isinstance(ds.run_timestamp_raw, float)
     assert isinstance(ds.run_timestamp(), str)
+
+
+@pytest.mark.usefixtures('experiment')
+def test_integer_timestamps_in_database_are_supported():
+    ds = DataSet()
+
+    ds.mark_started()
+    ds.mark_completed()
+
+    with atomic(ds.conn) as conn:
+        _rewrite_timestamps(conn, ds.run_id, 42, 69)
+
+    assert isinstance(ds.run_timestamp_raw, float)
+    assert isinstance(ds.completed_timestamp_raw, float)
+    assert isinstance(ds.run_timestamp(), str)
+    assert isinstance(ds.completed_timestamp(), str)
 
 
 def test_dataset_read_only_properties(dataset):
@@ -808,15 +828,10 @@ class TestGetData:
             (2, 4, xdata[(2-1):4]),
         ],
     )
-    def test_get_data_with_start_and_end_args(self, ds_with_vals,
-                                              start, end, expected):
-        data = ds_with_vals.get_parameter_data(
-            self.x, start=start, end=end)['x']
-        if len(expected) == 0:
-            assert data == {}
-        else:
-            data = data['x']
-            np.testing.assert_array_equal(data, expected)
+    def test_get_data_with_start_and_end_args(self, ds_with_vals, start, end, expected):
+        data = ds_with_vals.get_parameter_data(self.x, start=start, end=end)["x"]
+        data = data["x"]
+        np.testing.assert_array_equal(data, expected)
 
 
 @settings(deadline=600, suppress_health_check=(HealthCheck.function_scoped_fixture,))
@@ -1246,7 +1261,6 @@ def limit_data_to_start_end(start, end, input_names, expected_names,
             end = expected_shapes[input_names[0]][0][0]
         if end < start:
             for name in input_names:
-                expected_names[name] = []
                 expected_shapes[name] = ()
                 expected_values[name] = {}
         else:
@@ -1261,3 +1275,14 @@ def limit_data_to_start_end(start, end, input_names, expected_names,
                     expected_values[name][i] = \
                         expected_values[name][i][start - 1:end]
     return start, end
+
+
+@pytest.mark.usefixtures("experiment")
+def test_empty_ds_parameters():
+
+    ds = new_data_set("mydataset")
+    assert ds.parameters is None
+    ds.mark_started()
+    assert ds.parameters is None
+    ds.mark_completed()
+    assert ds.parameters is None

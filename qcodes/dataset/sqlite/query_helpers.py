@@ -4,11 +4,11 @@ are useful for building more database-specific queries out of them.
 """
 import itertools
 import sqlite3
-from distutils.version import LooseVersion
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from numpy import ndarray
+from packaging import version
 
 from qcodes.dataset.sqlite.connection import (
     ConnectionPlus,
@@ -21,7 +21,7 @@ from qcodes.utils.deprecate import deprecate
 
 # represent the type of  data we can/want map to sqlite column
 VALUE = Union[str, complex, List, ndarray, bool, None]
-VALUES = List[VALUE]
+VALUES = Sequence[VALUE]
 
 
 def one(curr: sqlite3.Cursor, column: Union[int, str]) -> Any:
@@ -74,8 +74,26 @@ def many_many(curr: sqlite3.Cursor, *columns: str) -> List[List[Any]]:
     return results
 
 
-def select_one_where(conn: ConnectionPlus, table: str, column: str,
-                     where_column: str, where_value: Any) -> Any:
+def select_one_where(
+    conn: ConnectionPlus, table: str, column: str, where_column: str, where_value: VALUE
+) -> VALUE:
+    """
+    Select a value from a given column given a match of a value in a
+    different column. If the given matched row/column intersect is empty
+    None will be returned.
+
+    Args:
+        conn: Connection to the db
+        table: Table to look for values in
+        column: Column to return value from
+        where_column: Column to match on
+        where_value: Value to match in where_column
+
+    Returns:
+        Value found
+    raises:
+        RuntimeError if not exactly match is found.
+    """
     query = f"""
     SELECT {column}
     FROM
@@ -88,8 +106,13 @@ def select_one_where(conn: ConnectionPlus, table: str, column: str,
     return res
 
 
-def select_many_where(conn: ConnectionPlus, table: str, *columns: str,
-                      where_column: str, where_value: Any) -> Any:
+def select_many_where(
+    conn: ConnectionPlus,
+    table: str,
+    *columns: str,
+    where_column: str,
+    where_value: VALUE,
+) -> VALUES:
     _columns = ",".join(columns)
     query = f"""
     SELECT {_columns}
@@ -180,13 +203,13 @@ def insert_many_values(conn: ConnectionPlus,
     # Version check cf.
     # "https://stackoverflow.com/questions/9527851/sqlite-error-
     #  too-many-terms-in-compound-select"
-    version = SQLiteSettings.settings['VERSION']
+    version_str = SQLiteSettings.settings["VERSION"]
 
     # According to the SQLite changelog, the version number
     # to check against below
     # ought to be 3.7.11, but that fails on Travis
-    if LooseVersion(str(version)) <= LooseVersion('3.8.2'):
-        max_var = SQLiteSettings.limits['MAX_COMPOUND_SELECT']
+    if version.parse(str(version_str)) <= version.parse("3.8.2"):
+        max_var = SQLiteSettings.limits["MAX_COMPOUND_SELECT"]
     else:
         max_var = SQLiteSettings.limits['MAX_VARIABLE_NUMBER']
     rows_per_transaction = int(int(max_var)/no_of_columns)

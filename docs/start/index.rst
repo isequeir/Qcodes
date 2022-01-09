@@ -10,9 +10,9 @@ Getting Started
 Requirements
 ------------
 
-You need a working python 3.x installation to be able to use QCoDeS. We highly
-recommend installing Miniconda, which takes care of installing Python and
-managing packages. In the following it will be assumed that you use Miniconda.
+You need a working python 3.7 installation, as the minimum Python version, to be able to
+use QCoDeS. We highly recommend installing Miniconda, which takes care of installing Python
+and managing packages. In the following it will be assumed that you use Miniconda.
 Download and install it from `here <https://docs.conda.io/en/latest/miniconda.html>`_. Make
 sure to download the latest version with python 3.7 or newer.
 
@@ -41,12 +41,12 @@ Here type in the prompt:
 
 .. code:: bash
 
-    conda create -n qcodes python=3.8
+    conda create -n qcodes python=3.9
     conda activate qcodes
     pip install qcodes
 
 The first line creates a new conda environment that is called *qcodes*
-with python 3.8 (QCoDeS also supports 3.7 and 3.9). The second line activates
+with python 3.9 (QCoDeS also supports 3.7 and 3.8). The second line activates
 this freshly created environment, so that the command in the third line will
 install qcodes for this environment.
 
@@ -80,7 +80,7 @@ Clone the QCoDeS repository from GitHub from https://github.com/QCoDeS/Qcodes
 
 .. code:: bash
 
-    conda create qcodesdev python=3.8
+    conda create qcodesdev python=3.9
     conda activate qcodesdev
 
 Finally install QCoDeS add the repository via
@@ -241,8 +241,9 @@ the QCoDeS environment in the program, then you could be able to run the package
 in that environment. The reason is because by default, *Anaconda Navigator* starts with the
 ``base(root)`` environment.
 
-Getting started
----------------
+Working example notebooks
+-------------------------
 
-Have a look at `15 minutes to Qcodes <../examples/15_minutes_to_QCoDeS.ipynb>`__, and or browse
-`the examples notebooks <../examples/index.rst>`__.
+For a more hands-on approach to learning about QCoDeS, have a look at `15 minutes to Qcodes <../examples/15_minutes_to_QCoDeS.ipynb>`__.
+
+We also have a library of `examples notebooks <../examples/index.rst>`__ that detail more specific features of the software suite.

@@ -1,7 +1,7 @@
 {
     "core":{
         "default_fmt": "data/{date}/#{counter}_{name}_{time}",
-        "register_magic": true,
+        "register_magic": false,
         "import_legacy_api": false,
         "db_location": "~/experiments.db",
         "db_debug": false,
@@ -72,7 +72,8 @@
         "export_automatic": false,
         "export_type": null,
         "export_prefix": "qcodes_",
-        "export_path": "~"
+        "export_path": "~",
+        "export_name_elements": ["captured_run_id", "guid"]
     },
     "telemetry":
     {

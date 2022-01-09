@@ -13,6 +13,21 @@ from qcodes.dataset.export_config import DataExportType
 from qcodes.dataset.linked_datasets.links import links_to_str
 
 
+@pytest.mark.usefixtures("experiment")
+@pytest.fixture(name="mock_empty_dataset")
+def _make_mock_empty_dataset():
+    dataset = new_data_set("dataset")
+    xparam = ParamSpecBase("x", "numeric")
+    yparam = ParamSpecBase("y", "numeric")
+    zparam = ParamSpecBase("z", "numeric")
+    idps = InterDependencies_(dependencies={yparam: (xparam,), zparam: (xparam,)})
+    dataset.set_interdependencies(idps)
+
+    dataset.mark_started()
+    dataset.mark_completed()
+    return dataset
+
+
 @pytest.mark.usefixtures('experiment')
 @pytest.fixture(name="mock_dataset")
 def _make_mock_dataset():
@@ -164,10 +179,9 @@ def test_export_csv(tmp_path_factory, mock_dataset):
     path = str(tmp_path)
     mock_dataset.export(export_type="csv", path=path, prefix="qcodes_")
 
-    expected_path = f"qcodes_{mock_dataset.run_id}.csv"
-    expected_full_path = os.path.join(path, f"qcodes_{mock_dataset.run_id}.csv")
+    expected_path = f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}.csv"
+    expected_full_path = os.path.join(path, expected_path)
     assert mock_dataset.export_info.export_paths["csv"] == expected_full_path
-    assert mock_dataset._export_path is not None
     assert os.listdir(path) == [expected_path]
     with open(expected_full_path) as f:
         assert f.readlines() == ['0.0\t1.0\t2.0\n']
@@ -178,8 +192,9 @@ def test_export_netcdf(tmp_path_factory, mock_dataset):
     tmp_path = tmp_path_factory.mktemp("export_netcdf")
     path = str(tmp_path)
     mock_dataset.export(export_type="netcdf", path=path, prefix="qcodes_")
-    assert os.listdir(path) == [f"qcodes_{mock_dataset.run_id}.nc"]
-    file_path = os.path.join(path, f"qcodes_{mock_dataset.run_id}.nc")
+    expected_path = f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}.nc"
+    assert os.listdir(path) == [expected_path]
+    file_path = os.path.join(path, expected_path)
     ds = xr.open_dataset(file_path)
     df = ds.to_dataframe()
     assert df.index.name == "x"
@@ -188,15 +203,18 @@ def test_export_netcdf(tmp_path_factory, mock_dataset):
     assert df.z.values.tolist() == [2.0]
 
     assert mock_dataset.export_info.export_paths["nc"] == file_path
-    assert mock_dataset._export_path is not None
 
 
 @pytest.mark.usefixtures("experiment")
 def test_export_netcdf_csv(tmp_path_factory, mock_dataset):
     tmp_path = tmp_path_factory.mktemp("export_netcdf")
     path = str(tmp_path)
-    csv_path = os.path.join(path, f"qcodes_{mock_dataset.run_id}.csv")
-    nc_path = os.path.join(path, f"qcodes_{mock_dataset.run_id}.nc")
+    csv_path = os.path.join(
+        path, f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}.csv"
+    )
+    nc_path = os.path.join(
+        path, f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}.nc"
+    )
 
     mock_dataset.export(export_type="netcdf", path=path, prefix="qcodes_")
     mock_dataset.export(export_type="csv", path=path, prefix="qcodes_")
@@ -205,7 +223,9 @@ def test_export_netcdf_csv(tmp_path_factory, mock_dataset):
     assert mock_dataset.export_info.export_paths["csv"] == csv_path
 
     mock_dataset.export(export_type="netcdf", path=path, prefix="foobar_")
-    nc_path = os.path.join(path, f"foobar_{mock_dataset.run_id}.nc")
+    nc_path = os.path.join(
+        path, f"foobar_{mock_dataset.captured_run_id}_{mock_dataset.guid}.nc"
+    )
 
     assert mock_dataset.export_info.export_paths["nc"] == nc_path
     assert mock_dataset.export_info.export_paths["csv"] == csv_path
@@ -216,8 +236,11 @@ def test_export_netcdf_complex_data(tmp_path_factory, mock_dataset_complex):
     tmp_path = tmp_path_factory.mktemp("export_netcdf")
     path = str(tmp_path)
     mock_dataset_complex.export(export_type="netcdf", path=path, prefix="qcodes_")
-    assert os.listdir(path) == [f"qcodes_{mock_dataset_complex.run_id}.nc"]
-    file_path = os.path.join(path, f"qcodes_{mock_dataset_complex.run_id}.nc")
+    short_path = (
+        f"qcodes_{mock_dataset_complex.captured_run_id}_{mock_dataset_complex.guid}.nc"
+    )
+    assert os.listdir(path) == [short_path]
+    file_path = os.path.join(path, short_path)
     # need to explicitly use h5netcdf when reading or complex data vars will be empty
     ds = xr.open_dataset(file_path, engine="h5netcdf")
     df = ds.to_dataframe()
@@ -228,10 +251,10 @@ def test_export_netcdf_complex_data(tmp_path_factory, mock_dataset_complex):
 
 @pytest.mark.usefixtures('experiment')
 def test_export_no_or_nonexistent_type_specified(tmp_path_factory, mock_dataset):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No data export type specified"):
         mock_dataset.export()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Export type foo is unknown."):
         mock_dataset.export(export_type="foo")
 
 
@@ -239,12 +262,38 @@ def test_export_no_or_nonexistent_type_specified(tmp_path_factory, mock_dataset)
 def test_export_from_config(tmp_path_factory, mock_dataset, mocker):
     tmp_path = tmp_path_factory.mktemp("export_from_config")
     path = str(tmp_path)
-    mock_type = mocker.patch("qcodes.dataset.data_set.get_data_export_type")
-    mock_path = mocker.patch("qcodes.dataset.data_set.get_data_export_path")
+    mock_type = mocker.patch("qcodes.dataset.data_set_protocol.get_data_export_type")
+    mock_path = mocker.patch("qcodes.dataset.data_set_protocol.get_data_export_path")
     mock_type.return_value = DataExportType.CSV
     mock_path.return_value = path
     mock_dataset.export()
-    assert os.listdir(path) == [f"qcodes_{mock_dataset.run_id}.csv"]
+    assert os.listdir(path) == [
+        f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}.csv"
+    ]
+
+
+@pytest.mark.usefixtures("experiment")
+def test_export_from_config_set_name_elements(tmp_path_factory, mock_dataset, mocker):
+    tmp_path = tmp_path_factory.mktemp("export_from_config")
+    path = str(tmp_path)
+    mock_type = mocker.patch("qcodes.dataset.data_set_protocol.get_data_export_type")
+    mock_path = mocker.patch("qcodes.dataset.data_set_protocol.get_data_export_path")
+    mock_name_elements = mocker.patch(
+        "qcodes.dataset.data_set_protocol.get_data_export_name_elements"
+    )
+    mock_type.return_value = DataExportType.CSV
+    mock_path.return_value = path
+    mock_name_elements.return_value = [
+        "captured_run_id",
+        "guid",
+        "exp_name",
+        "sample_name",
+        "name",
+    ]
+    mock_dataset.export()
+    assert os.listdir(path) == [
+        f"qcodes_{mock_dataset.captured_run_id}_{mock_dataset.guid}_{mock_dataset.exp_name}_{mock_dataset.sample_name}_{mock_dataset.name}.csv"
+    ]
 
 
 def test_same_setpoint_warning_for_df_and_xarray(different_setpoint_dataset):
@@ -265,6 +314,23 @@ def test_same_setpoint_warning_for_df_and_xarray(different_setpoint_dataset):
 
     with pytest.warns(UserWarning, match=warning_message):
         different_setpoint_dataset.cache.to_xarray_dataset()
+
+
+def test_export_to_xarray_dataset_empty_ds(mock_empty_dataset):
+    ds = mock_empty_dataset.to_xarray_dataset()
+    assert len(ds) == 2
+    assert len(ds.coords) == 1
+    assert "x" in ds.coords
+    _assert_xarray_metadata_is_as_expected(ds, mock_empty_dataset)
+
+
+def test_export_to_xarray_dataarray_empty_ds(mock_empty_dataset):
+    dad = mock_empty_dataset.to_xarray_dataarray_dict()
+    assert len(dad) == 2
+    assert len(dad["y"].coords) == 1
+    assert "x" in dad["y"].coords
+    assert len(dad["z"].coords) == 1
+    assert "x" in dad["z"].coords
 
 
 def test_export_to_xarray(mock_dataset):
@@ -323,7 +389,8 @@ def test_export_to_xarray_extra_metadate_can_be_stored(mock_dataset, tmp_path):
     data_as_xarray = mock_dataset.to_xarray_dataset()
 
     loaded_data = xr.load_dataset(
-        tmp_path/f"{qcodes.config.dataset.export_prefix}{mock_dataset.run_id}.nc"
+        tmp_path
+        / f"{qcodes.config.dataset.export_prefix}{mock_dataset.captured_run_id}_{mock_dataset.guid}.nc"
     )
 
     # check that the metadata in the qcodes dataset is roundtripped to the loaded
